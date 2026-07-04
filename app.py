@@ -12,7 +12,6 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 app = FastAPI()
 
-# Allow your Vercel frontend to talk to this backend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], 
