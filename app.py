@@ -6,11 +6,13 @@ from fastapi import FastAPI, UploadFile, File, Header, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+from langchain_groq import ChatGroq
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 app = FastAPI()
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -19,6 +21,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+print("Loading free HuggingFace embedding model...")
+embedding_model = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+print("Embedding model loaded successfully!")
 
 sessions = {}
 
@@ -30,14 +37,13 @@ def read_root():
 async def upload_pdf(file: UploadFile = File(...), x_api_key: str = Header(...), x_session_id: str = Header(...)):
     start_time = time.time()
     try:
-        embedding_model = OpenAIEmbeddings(model="text-embedding-3-small", api_key=x_api_key)
         contents = await file.read()
         doc = fitz.open(stream=contents, filetype="pdf")
         doc_texts = [page.get_text() for page in doc]
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
         chunks = text_splitter.create_documents(doc_texts)
         vector_store = FAISS.from_documents(chunks, embedding_model)
-        cache_index = faiss.IndexFlatL2(1536)
+        cache_index = faiss.IndexFlatL2(384) # MiniLM embedding size is 384
         sessions[x_session_id] = {"vector_store": vector_store, "cache_index": cache_index, "cache_data": []}
         time_taken = round(time.time() - start_time, 2)
         return {"status": "success", "pages": len(doc_texts), "time_taken": time_taken}
@@ -60,8 +66,7 @@ async def chat(req: ChatRequest, x_api_key: str = Header(...), x_session_id: str
     answer = ""
     try:
         start_time = time.time()
-        embedding_model = OpenAIEmbeddings(model="text-embedding-3-small", api_key=x_api_key)
-        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.2, api_key=x_api_key)
+        llm = ChatGroq(model="llama-3.1-8b-instant", api_key=x_api_key)
         query_embedding = embedding_model.embed_query(query)
         
         if len(cache_data) > 0:
